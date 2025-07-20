@@ -8,6 +8,7 @@ import platform
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
+
 # Print both current working directory and script directory for comparison
 print('Current working directory:', os.getcwd())
 
@@ -18,6 +19,7 @@ print('Script directory:', BASE_DIR)
 # Use the script directory to ensure the Excel template is found
 EXCEL_TEMPLATE = os.path.join(BASE_DIR, "Standard_Template_new.xlsx")
 print('Excel template path:', EXCEL_TEMPLATE)
+
 # Injection pressure mapping
 injection_pressure_map = {
     "ABS UV": 700, "ABS Non UV": 700, "PP T20": 650, "PC Clear": 900,
@@ -99,54 +101,44 @@ def update_tooling_by_zf_part_number(wb, zf_part):
         entries_ws = wb["Entries"]
         tooling_ws = wb["Tooling"]
         calculation_ws = wb["Calculation"]
-        summary_ws = wb["Summary"]
-        import_ws = wb["Import"]
 
-        found_row = None
+        found_entries_row = None
+        found_calc_row = None
+        
+        # Find the correct row in Entries sheet
         for row in range(3, entries_ws.max_row + 1):
             cell_val = entries_ws.cell(row=row, column=3).value  # Column C = ZF Part Number
             if cell_val and str(cell_val).strip().lower() == zf_part.strip().lower():
-                found_row = row
+                found_entries_row = row
+                print(f"Tooling update: Found ZF Part '{zf_part}' in Entries at row {found_entries_row}")
                 break
 
-        if not found_row:
+        if not found_entries_row:
             messagebox.showerror("Not Found", f"ZF Part Number '{zf_part}' not found in Entries sheet.")
             return False
 
-        print(f"Found {zf_part} in Entries sheet at row {found_row}")
-        
-        # Clear ALL data rows in Import sheet (keep header in row 1, clear rows 2+)
-        print("Clearing Import sheet rows 2-99 to remove any old part data...")
-        for row in range(2, 100):  # Clear rows 2 to 99 to remove any old part data
-            for col in range(1, 30):
-                import_ws.cell(row=row, column=col).value = None
-
-        print(f"Updating row 6 in Tooling and Summary, row 2 in Import with {zf_part} data...")
-
-        # Update Tooling sheet (row 6)
-        for col in range(1, 28):  # A to AA
-            tooling_ws.cell(row=6, column=col).value = entries_ws.cell(row=found_row, column=col).value
-
-        # Update Summary sheet (row 6) with the same data
-        for col in range(1, 28):  # A to AA
-            summary_ws.cell(row=6, column=col).value = entries_ws.cell(row=found_row, column=col).value
-
-        # Update Import sheet (row 2) with the same data
-        for col in range(1, 28):  # A to AA
-            import_ws.cell(row=2, column=col).value = entries_ws.cell(row=found_row, column=col).value
-
-        # AP (42) → AB (28), AS (45) → AC (29)
+        # Find the correct row in Calculation sheet
         for row in range(6, calculation_ws.max_row + 1):
-            if calculation_ws.cell(row=row, column=3).value == zf_part:
-                tooling_ws.cell(row=6, column=28).value = calculation_ws.cell(row=row, column=42).value
-                tooling_ws.cell(row=6, column=29).value = calculation_ws.cell(row=row, column=45).value
-                # Also update Summary sheet
-                summary_ws.cell(row=6, column=28).value = calculation_ws.cell(row=row, column=42).value
-                summary_ws.cell(row=6, column=29).value = calculation_ws.cell(row=row, column=45).value
-                # Also update Import sheet (row 2)
-                import_ws.cell(row=2, column=28).value = calculation_ws.cell(row=row, column=42).value
-                import_ws.cell(row=2, column=29).value = calculation_ws.cell(row=row, column=45).value
+            cell_val = calculation_ws.cell(row=row, column=3).value  # Column C = ZF Part Number
+            if cell_val and str(cell_val).strip().lower() == zf_part.strip().lower():
+                found_calc_row = row
+                print(f"Tooling update: Found ZF Part '{zf_part}' in Calculation at row {found_calc_row}")
                 break
+
+        # Copy data from found entries row to tooling row 6 (columns A to AA)
+        for col in range(1, 28):  # A to AA
+            tooling_ws.cell(row=6, column=col).value = entries_ws.cell(row=found_entries_row, column=col).value
+        
+        print(f"Tooling update: Copied data from Entries row {found_entries_row} to Tooling row 6")
+        
+        # Verify the part name was copied correctly
+        part_name_tooling = tooling_ws.cell(row=6, column=4).value  # Column D = Part Name
+        print(f"Tooling update: Part name in tooling sheet is now: {part_name_tooling}")
+
+        # Copy calculation data if found (AP (42) → AB (28), AS (45) → AC (29))
+        if found_calc_row:
+            tooling_ws.cell(row=6, column=28).value = calculation_ws.cell(row=found_calc_row, column=42).value
+            tooling_ws.cell(row=6, column=29).value = calculation_ws.cell(row=found_calc_row, column=45).value
 
         return True
     except Exception as e:
@@ -157,24 +149,18 @@ def export_with_formulas(zf_part):
     try:
         print(f">>> Starting export WITH formulas for: {zf_part}")
         wb = load_workbook(EXCEL_TEMPLATE, data_only=False)
-        export_logic(wb, zf_part, export_type="with")
+        if export_logic(wb, zf_part, export_type="with"):
+            print("✅ Export with formulas completed successfully")
     except Exception as e:
         messagebox.showerror("Export Error", str(e))
         print("❌ Export with formulas failed:", e)
-
-    def get_cell_value_evaluated(cell):
-        try:
-            if cell.data_type == "f":  # It's a formula
-                return cell.value if not cell.value.startswith("=") else None
-            return cell.value
-        except:
-            return None
 
 def export_without_formulas(zf_part):
     try:
         print(f">>> Starting export WITHOUT formulas for: {zf_part}")
         wb = load_workbook(EXCEL_TEMPLATE, data_only=True)
-        export_logic(wb, zf_part, export_type="without")
+        if export_logic(wb, zf_part, export_type="without"):
+            print("✅ Export without formulas completed successfully")
     except Exception as e:
         messagebox.showerror("Export Error", str(e))
         print("❌ Export without formulas failed:", e)
@@ -184,25 +170,22 @@ def export_logic(wb, zf_part, export_type="with"):
     export_wb = Workbook()
     export_wb.remove(export_wb.active)
 
-    # Create a copy of the workbook to avoid modifying the original
-    import tempfile
-    with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp_file:
-        wb.save(tmp_file.name)
-        wb_copy = load_workbook(tmp_file.name, data_only=(export_type == "without"))
-    
-    if not update_tooling_by_zf_part_number(wb_copy, zf_part):
-        return
+    # Debug: Print all available sheet names
+    print(f"Available sheets in workbook: {wb.sheetnames}")
 
-    calc_ws = wb_copy["Calculation"]
-    tooling_ws = wb_copy["Tooling"]
+    calc_ws = wb["Calculation"]
+    tooling_ws = wb["Tooling"]
+    summary_ws = wb["Summary"] if "Summary" in wb.sheetnames else None
 
     found_row = None
+    found_entries_row = None
 
-    # 🟡 STEP 1: Find row by ZF Part Number
+    # 🟡 STEP 1: Find row by ZF Part Number in Calculation sheet
     for row in range(6, calc_ws.max_row + 1):
         val = calc_ws[f"C{row}"].value
         if val and str(val).strip().lower() == zf_part.strip().lower():
             found_row = row
+            print(f"Found ZF Part '{zf_part}' in Calculation sheet at row {found_row}")
             break
 
     if not found_row and export_type == "with":
@@ -213,20 +196,123 @@ def export_logic(wb, zf_part, export_type="with"):
                 val = temp_calc[f"C{row}"].value
                 if val and str(val).strip().lower() == zf_part.strip().lower():
                     found_row = row
+                    print(f"Fallback: Found ZF Part '{zf_part}' in Calculation sheet at row {found_row}")
                     break
         except Exception as e:
             messagebox.showerror("Lookup Error", f"Fallback lookup failed:\n{str(e)}")
-            return
+            return False
 
     if not found_row:
         messagebox.showerror("Not Found", f"ZF Part Number '{zf_part}' not found in Calculation sheet.")
-        return
+        return False
 
-    # ✅ Copy Tool Size values to Calculation
+    # 🟡 STEP 2: Find corresponding row in Entries sheet
+    entries_ws = wb["Entries"] if "Entries" in wb.sheetnames else None
+    if entries_ws:
+        for row in range(3, entries_ws.max_row + 1):
+            val = entries_ws[f"C{row}"].value
+            if val and str(val).strip().lower() == zf_part.strip().lower():
+                found_entries_row = row
+                print(f"Found ZF Part '{zf_part}' in Entries sheet at row {found_entries_row}")
+                break
+
+    # 🟡 STEP 3: Update tooling sheet with correct data BEFORE export
+    if found_entries_row and not update_tooling_by_zf_part_number(wb, zf_part):
+        return False
+
+    # 🟡 STEP 3.5: Update Summary sheet with the same data as Tooling
+    if found_entries_row and summary_ws:
+        try:
+            print(f"Updating Summary sheet with data from Entries row {found_entries_row}")
+            
+            # Instead of copying from Tooling, let's copy directly from Entries with proper column mapping for Summary
+            entries_ws_ref = wb["Entries"]
+            
+            # Define the correct column mapping for Summary sheet
+            # Map from Entries columns to Summary columns based on actual column headers
+            summary_column_mapping = {
+                # Entries -> Summary mapping
+                1: 1,   # Sl.# (Entries A) -> Sl.# (Summary A)
+                3: 2,   # ZF Part Number (Entries C) -> ZF Part Number (Summary B)
+                5: 3,   # Part Name (Entries E) -> Part Name (Summary C)
+                7: 4,   # No.off (per Vehicle) (Entries G) -> No.off (per Vehicle) (Summary D)
+                6: 5,   # Volume P.A Nos (Entries F) -> Volume P.A Nos (Summary E)
+                8: 6,   # Rawmaterial (Entries H) -> Rawmaterial (Summary F)
+                # Part Size not in Entries, will be calculated/set separately
+                10: 8,  # W(mm) (Entries J) -> W(mm) (Summary H)
+                11: 9,  # H(mm) (Entries K) -> H(mm) (Summary I)
+                12: 10, # T(mm) (Entries L) -> T(mm) (Summary J)
+                # Number of Cavity = X direction * Y direction cavities from Entries
+                # Will be calculated separately
+                # Other fields like costs will be calculated by the application logic
+            }
+            
+            # Special calculation fields that need to be computed
+            # Number of Cavity = X direction * Y direction
+            x_cavities = entries_ws_ref.cell(row=found_entries_row, column=13).value or 1  # No. of cavities -X direction
+            y_cavities = entries_ws_ref.cell(row=found_entries_row, column=14).value or 1  # No. of cavities -Y direction
+            total_cavities = int(x_cavities) * int(y_cavities)
+            summary_ws.cell(row=6, column=11).value = total_cavities  # Number of Cavity Nos
+            
+            # Part Size calculation (L x W x H from Entries)
+            l_mm = entries_ws_ref.cell(row=found_entries_row, column=9).value or 0   # L(mm)
+            w_mm = entries_ws_ref.cell(row=found_entries_row, column=10).value or 0  # W(mm) 
+            h_mm = entries_ws_ref.cell(row=found_entries_row, column=11).value or 0  # H(mm)
+            if l_mm and w_mm and h_mm:
+                part_size = f"{l_mm} x {w_mm} x {h_mm}"
+                summary_ws.cell(row=6, column=7).value = part_size  # Part Size (As per tooling direction)
+            
+            # Copy data using the correct column mapping
+            for entries_col, summary_col in summary_column_mapping.items():
+                summary_ws.cell(row=6, column=summary_col).value = entries_ws_ref.cell(row=found_entries_row, column=entries_col).value
+            
+            print("Summary sheet updated with data from Entries using correct column mapping")
+            
+            # Verify the data was copied correctly - checking actual Summary sheet columns
+            sl_no_summary = summary_ws.cell(row=6, column=1).value      # Column A = Sl.#
+            zf_part_summary = summary_ws.cell(row=6, column=2).value    # Column B = ZF Part Number  
+            part_name_summary = summary_ws.cell(row=6, column=3).value  # Column C = Part Name
+            no_off_summary = summary_ws.cell(row=6, column=4).value     # Column D = No.off (per Vehicle)
+            volume_summary = summary_ws.cell(row=6, column=5).value     # Column E = Volume P.A Nos
+            rawmaterial_summary = summary_ws.cell(row=6, column=6).value # Column F = Rawmaterial
+            part_size_summary = summary_ws.cell(row=6, column=7).value  # Column G = Part Size
+            w_mm_summary = summary_ws.cell(row=6, column=8).value       # Column H = W(mm)
+            h_mm_summary = summary_ws.cell(row=6, column=9).value       # Column I = H(mm)
+            t_mm_summary = summary_ws.cell(row=6, column=10).value      # Column J = T(mm)
+            cavities_summary = summary_ws.cell(row=6, column=11).value  # Column K = Number of Cavity Nos
+            
+            print(f"Summary sheet verification:")
+            print(f"  Sl.#: {sl_no_summary}")
+            print(f"  ZF Part Number: {zf_part_summary}")
+            print(f"  Part Name: {part_name_summary}")
+            print(f"  No.off (per Vehicle): {no_off_summary}")
+            print(f"  Volume P.A Nos: {volume_summary}")
+            print(f"  Rawmaterial: {rawmaterial_summary}")
+            print(f"  Part Size: {part_size_summary}")
+            print(f"  W(mm): {w_mm_summary}")
+            print(f"  H(mm): {h_mm_summary}")
+            print(f"  T(mm): {t_mm_summary}")
+            print(f"  Number of Cavity Nos: {cavities_summary}")
+            
+        except Exception as e:
+            print(f"Warning: Failed to update Summary sheet: {e}")
+
+    # Refresh the tooling worksheet reference after update
+    tooling_ws = wb["Tooling"]
+    
+    # Get the updated tooling values and copy to calculation
     calc_ws[f"AQ{found_row}"] = tooling_ws["AD6"].value
     calc_ws[f"AR{found_row}"] = tooling_ws["AE6"].value
 
-    sheet_rows = {"Calculation": found_row, "Tooling": 6, "Summary": 6}
+    # Find corresponding summary row (after we updated it to row 6)
+    found_summary_row = 6  # We always update Summary at row 6, same as Tooling
+    if summary_ws:
+        print(f"Using Summary sheet row 6 (updated with current part data)")
+    else:
+        print("Warning: Summary sheet not found, using calculation row number")
+        found_summary_row = found_row
+
+    sheet_rows = {"Calculation": found_row, "Tooling": 6, "Summary": found_summary_row}
     sheet_headers = {"Calculation": [3, 4, 5], "Tooling": [3, 4, 5], "Summary": [3, 4, 5]}
     sheet_col_limits = {
         "Calculation": 90,
@@ -236,9 +322,24 @@ def export_logic(wb, zf_part, export_type="with"):
         "Master Data": 18,
         "Entries": 38
     }
+    
+    print(f"Export data rows: Calculation={found_row}, Tooling=6, Summary={found_summary_row}")
+    
+    # Debug: Show what's in Summary row 6 after our update
+    if summary_ws and found_summary_row == 6:
+        sl_no_summary = summary_ws.cell(row=6, column=1).value      # Column A = Sl.#
+        zf_part_summary = summary_ws.cell(row=6, column=2).value    # Column B = ZF Part Number  
+        part_name_summary = summary_ws.cell(row=6, column=3).value  # Column C = Part Name
+        no_off_summary = summary_ws.cell(row=6, column=4).value     # Column D = No.off (per Vehicle)
+        print(f"Final Summary verification - Sl.#: {sl_no_summary}, ZF Part: {zf_part_summary}, Part Name: {part_name_summary}, No.off: {no_off_summary}")
 
     for sheet_name in ["Calculation", "Tooling", "Summary", "Master Data", "Entries", "Import"]:
-        source = wb_copy[sheet_name]
+        # Check if the sheet exists before trying to access it
+        if sheet_name not in wb.sheetnames:
+            print(f"Warning: Sheet '{sheet_name}' not found in workbook, skipping...")
+            continue
+            
+        source = wb[sheet_name]
         target = export_wb.create_sheet(sheet_name)
         # Hide Master Data and Entries sheets in exported file
         if sheet_name in ["Master Data", "Entries"]:
@@ -284,75 +385,93 @@ def export_logic(wb, zf_part, export_type="with"):
             continue
 
         elif sheet_name == "Import":
-            print(f"Processing Import sheet for export of {zf_part}...")
-            
-            # Copy only header row (row 1)
-            for col in range(1, 29):
-                cell = source.cell(row=1, column=col)
-                tgt = target.cell(row=1, column=col, value=cell.value)
-                if cell.has_style:
-                    tgt.font = copy(cell.font)
-                    tgt.border = copy(cell.border)
-                    tgt.fill = copy(cell.fill)
-                    tgt.number_format = copy(cell.number_format)
-                    tgt.protection = copy(cell.protection)
-                    tgt.alignment = copy(cell.alignment)
-            
-            # Get the requested part data directly from Entries sheet and put in row 2
-            entries_ws = wb_copy["Entries"]
-            found_entries_row = None
-            
-            # Find the specific part in Entries sheet
-            for row in range(3, entries_ws.max_row + 1):
-                cell_val = entries_ws.cell(row=row, column=3).value  # Column C = ZF Part Number
-                if cell_val and str(cell_val).strip().lower() == zf_part.strip().lower():
-                    found_entries_row = row
-                    break
-            
-            if found_entries_row:
-                print(f"Found {zf_part} in Entries row {found_entries_row}, adding to Import row 2")
-                # Copy data directly from Entries to row 2 of target Import sheet
-                for col in range(1, 29):
-                    if col <= 27:  # Copy columns A to AA from Entries
-                        entry_value = entries_ws.cell(row=found_entries_row, column=col).value
-                        target.cell(row=2, column=col).value = entry_value
-                        if col == 3:  # ZF Part Number column
-                            print(f"Set ZF Part Number in Import row 2 to: {entry_value}")
-                    
-                # Add the calculated values from Calculation sheet if available
-                calc_ws = wb_copy["Calculation"]
-                for calc_row in range(6, calc_ws.max_row + 1):
-                    calc_zf_part = calc_ws.cell(row=calc_row, column=3).value
-                    if calc_zf_part and str(calc_zf_part).strip().lower() == zf_part.strip().lower():
-                        target.cell(row=2, column=28).value = calc_ws.cell(row=calc_row, column=42).value  # AB column
-                        target.cell(row=2, column=29).value = calc_ws.cell(row=calc_row, column=45).value  # AC column
-                        print(f"Added calculated values from Calculation row {calc_row}")
-                        break
+            # For Import sheet, we always need to preserve formulas so they can reference the updated Sl.#
+            # Load the source with formulas preserved regardless of export_type
+            if export_type == "without":
+                # For "without formulas" export, we need to temporarily load with formulas preserved
+                # to ensure VLOOKUP formulas work with the updated Sl.#, then evaluate them
+                temp_wb = load_workbook(EXCEL_TEMPLATE, data_only=False)
+                temp_source = temp_wb["Import"]
             else:
-                print(f"ERROR: Could not find {zf_part} in Entries sheet!")
+                temp_source = source
             
-            # Apply column widths
+            # Copy all rows and columns to preserve formulas and structure
+            for row in temp_source.iter_rows(min_row=1, max_row=temp_source.max_row, min_col=1, max_col=28):
+                for cell in row:
+                    tgt = target.cell(row=cell.row, column=cell.column)
+                    
+                    # For cell A2 (Sl.#), set the correct Sl.# for the requested part
+                    if cell.row == 2 and cell.column == 1:
+                        # Find the Sl.# from the Entries sheet for the requested ZF part
+                        if found_entries_row:
+                            entries_sl_no = entries_ws.cell(row=found_entries_row, column=1).value  # Sl.# from Entries
+                            print(f"Import sheet: Setting Sl.# to {entries_sl_no} for ZF Part '{zf_part}'")
+                            tgt.value = entries_sl_no
+                        else:
+                            tgt.value = cell.value
+                    else:
+                        # Copy the original value (formulas will reference the updated A2)
+                        if export_type == "with":
+                            # Keep formulas for "with formulas" export
+                            tgt.value = cell.value
+                        else:
+                            # For "without formulas" export, check if it's a formula
+                            if cell.value and isinstance(cell.value, str) and cell.value.startswith('='):
+                                # For VLOOKUP formulas, keep the formula so it can be evaluated with the new Sl.#
+                                # The formula will be evaluated when the file is saved/opened
+                                tgt.value = cell.value
+                            else:
+                                # For non-formula cells, copy the value directly
+                                tgt.value = cell.value
+                    
+                    # Copy cell styling
+                    if cell.has_style:
+                        tgt.font = copy(cell.font)
+                        tgt.border = copy(cell.border)
+                        tgt.fill = copy(cell.fill)
+                        tgt.number_format = copy(cell.number_format)
+                        tgt.protection = copy(cell.protection)
+                        tgt.alignment = copy(cell.alignment)
+            
+            # Close temporary workbook if we created one
+            if export_type == "without":
+                temp_wb.close()
+            
+            # Copy column widths
             for col_idx in range(1, 29):
                 col_letter = get_column_letter(col_idx)
                 if col_letter in source.column_dimensions:
                     target.column_dimensions[col_letter].width = source.column_dimensions[col_letter].width
             
-            # Apply merged cells only for header row
+            # Copy merged cells
             for m in source.merged_cells.ranges:
-                if m.min_row == 1 and m.max_row == 1:
-                    target.merge_cells(str(m))
+                target.merge_cells(str(m))
+            
+            # Debug: Verify Import sheet data after update
+            if found_entries_row:
+                import_sl_no = target.cell(row=2, column=1).value
+                print(f"Import sheet verification:")
+                print(f"  Sl.# in A2: {import_sl_no}")
+                print(f"  This should match the Sl.# from Entries row {found_entries_row}")
+                print(f"  Import sheet formulas will now reference this Sl.# to pull correct data from Calculation sheet")
+                
+                # Verify some key formulas are preserved
+                b2_formula = target.cell(row=2, column=2).value
+                f2_formula = target.cell(row=2, column=6).value
+                j2_formula = target.cell(row=2, column=10).value
+                print(f"  Key formulas preserved:")
+                print(f"    B2 (Part Number): {b2_formula}")
+                print(f"    F2 (Part Name): {f2_formula}")
+                print(f"    J2 (Quantity): {j2_formula}")
             continue
 
         # ✅ Logic for Calculation, Tooling, Summary (one row + headers)
         max_col = sheet_col_limits[sheet_name]
         data_row = sheet_rows[sheet_name]
+        
+        print(f"Processing sheet '{sheet_name}': copying data from row {data_row} to export row 6")
 
-        # Clear the target sheet to ensure no leftover data (especially for Tooling and Summary)
-        if sheet_name in ["Tooling", "Summary"]:
-            for row in range(1, 100):  # Clear a large range to be safe
-                for col in range(1, max_col + 1):
-                    target.cell(row=row, column=col).value = None
-
+        # Copy headers (rows 3, 4, 5)
         for row_idx in sheet_headers[sheet_name]:
             for col in range(1, max_col + 1):
                 cell = source.cell(row=row_idx, column=col)
@@ -365,9 +484,18 @@ def export_logic(wb, zf_part, export_type="with"):
                     tgt.protection = copy(cell.protection)
                     tgt.alignment = copy(cell.alignment)
 
+        # Copy the actual data row to row 6 in export
         for col in range(1, max_col + 1):
             src = source.cell(row=data_row, column=col)
-            tgt = target.cell(row=6, column=col, value=src.value)
+            # Get the actual value (whether formula result or raw value)
+            if export_type == "with" and src.data_type == 'f':
+                # Keep formula for "with formulas" export
+                cell_value = src.value
+            else:
+                # Get calculated value for "without formulas" export or non-formula cells
+                cell_value = src.value
+            
+            tgt = target.cell(row=6, column=col, value=cell_value)
             if src.has_style:
                 tgt.font = copy(src.font)
                 tgt.border = copy(src.border)
@@ -376,12 +504,19 @@ def export_logic(wb, zf_part, export_type="with"):
                 tgt.protection = copy(src.protection)
                 tgt.alignment = copy(src.alignment)
 
+        # Copy merged cells for headers
         for m in source.merged_cells.ranges:
-            if (m.min_row in sheet_headers[sheet_name] or m.max_row in sheet_headers[sheet_name]) or (
-                sheet_name == "Tooling" and 8 <= m.min_row <= 48):
+            if (m.min_row in sheet_headers[sheet_name] or m.max_row in sheet_headers[sheet_name]):
                 target.merge_cells(str(m))
 
+        # Special handling for Tooling sheet - copy additional rows
         if sheet_name == "Tooling":
+            # Copy merged cells for the additional rows
+            for m in source.merged_cells.ranges:
+                if 8 <= m.min_row <= 48:
+                    target.merge_cells(str(m))
+            
+            # Copy rows 8-48 for tooling sheet
             for r in range(8, 49):
                 for c in range(1, max_col + 1):
                     cell = source.cell(row=r, column=c)
@@ -401,22 +536,22 @@ def export_logic(wb, zf_part, export_type="with"):
             # If original width is None or too small, set a fallback width (like 15)
             target.column_dimensions[col_letter].width = src_width if (src_width and src_width > 6) else 15
 
-    # ✅ Save
-    safe_name = zf_part.replace(" ", "_").replace("/", "_")
+    # ✅ Save the exported file
+    safe_name = zf_part.replace(" ", "_").replace("/", "_").replace("\\", "_")
     suffix = "WithFormulas" if export_type == "with" else "ValuesOnly"
     export_filename = f"{safe_name}_Export_{suffix}.xlsx"
-    export_wb.save(export_filename)
-    messagebox.showinfo("Success", f"Exported to '{export_filename}'")
-
-    # Clean up temporary file
-    import os
+    
     try:
-        os.unlink(tmp_file.name)
-    except:
-        pass
-
-    if platform.system() == "Windows":
-        os.startfile(export_filename)
+        export_wb.save(export_filename)
+        messagebox.showinfo("Success", f"Exported to '{export_filename}'")
+        
+        if platform.system() == "Windows":
+            os.startfile(export_filename)
+        
+        return True
+    except Exception as e:
+        messagebox.showerror("Save Error", f"Failed to save export file: {str(e)}")
+        return False
 
 def save_to_standard_excel(entry_data):
     try:
